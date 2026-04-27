@@ -137,7 +137,7 @@ async function enviarMensaje(to, texto) {
 }
 
 // ─── Arrancar servidor ───────────────────────────────────────────
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor arrancado en puerto ${PORT}`);
 });
