@@ -54,31 +54,21 @@ app.post("/webhook", function(req, res) {
     console.log("Error: " + error.message);
   }
 });
-
-function llamarGemini(texto) {
-  var url = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY;
-
+function llamarGemini(historial) {
+  var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" + GEMINI_API_KEY;
+  var contents = historial.map(function(msg) {
+    return {
+      role: msg.role,
+      parts: [{ text: msg.parts[0].text }]
+    };
+  });
   var body = {
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { text: texto }
-        ]
-      }
-    ]
+    contents: contents,
+    generationConfig: {
+      maxOutputTokens: 300,
+      temperature: 0.7
+    }
   };
-
-  return axios.post(url, body)
-    .then(function(response) {
-      return response.data.candidates[0].content.parts[0].text;
-    })
-    .catch(function(error) {
-      console.log("🔥 ERROR COMPLETO:", error.response?.data);
-      throw error;
-    });
-}
-
 function enviarMensaje(to, texto) {
   var url = "https://graph.facebook.com/v19.0/" + PHONE_NUMBER_ID + "/messages";
   return axios.post(url, {
