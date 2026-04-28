@@ -96,7 +96,7 @@ app.post("/webhook", async (req, res) => {
 
 // ─── Llamar a la API de Gemini ───────────────────────────────────
 async function llamarGemini(historial) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
   const body = {
     system_instruction: {
       parts: [{ text: SYSTEM_PROMPT }],
