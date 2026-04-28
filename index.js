@@ -73,6 +73,11 @@ function llamarGemini(texto) {
     return 
       response.data.candidates[0].content.parts[0].text;
   });
+.catch(funtion(error) {
+  console.log("Error Gemini:",
+              error.response?.data; // clave para debug
+  throw error;
+});
 }
 
 function enviarMensaje(to, texto) {
