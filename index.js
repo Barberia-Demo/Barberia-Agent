@@ -56,7 +56,7 @@ app.post("/webhook", function(req, res) {
 });
 
 function llamarGemini(historial) {
-  var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" + GEMINI_API_KEY;
+  var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=" + GEMINI_API_KEY;
   var body = {
     contents: historial,
     generationConfig: {
