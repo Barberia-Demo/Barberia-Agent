@@ -55,17 +55,23 @@ app.post("/webhook", function(req, res) {
   }
 });
 
-function llamarGemini(historial) {
+function llamarGemini(texto) {
   var url = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY;
   var body = {
-    contents: historial,
+    contents: [
+      {
+        role: "user",
+        parts: [{text: texto }]
+      }
+      ],
     generationConfig: {
       maxOutputTokens: 300,
       temperature: 0.7
     }
   };
   return axios.post(url, body).then(function(response) {
-    return response.data.candidates[0].content.parts[0].text;
+    return 
+      response.data.candidates[0].content.parts[0].text;
   });
 }
 
