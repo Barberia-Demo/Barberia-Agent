@@ -63,7 +63,8 @@ function llamarGemini(texto) {
         role: "user",
         parts: [{text: texto }]
       }
-      ],
+      ]
+  };
     generationConfig: {
       maxOutputTokens: 300,
       temperature: 0.7
@@ -72,10 +73,10 @@ function llamarGemini(texto) {
   return axios.post(url, body).then(function(response) {
     return 
       response.data.candidates[0].content.parts[0].text;
-  });
+  })
 .catch(funtion(error) {
   console.log("Error Gemini:",
-              error.response?.data; // clave para debug
+              error.response?.data);
   throw error;
 });
 }
