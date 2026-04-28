@@ -1,92 +1,161 @@
 const express = require("express");
 const axios = require("axios");
+
 const app = express();
 app.use(express.json());
 
+// =====================
+// VARIABLES DE ENTORNO
+// =====================
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
+// =====================
+// MEMORIA (simple)
+// =====================
 const conversaciones = {};
+const locks = {};
 
-const SYSTEM_PROMPT = "Eres el asistente virtual de Barberia El Maestro, una barberia profesional. Tu funcion es gestionar citas via WhatsApp de forma amable y eficiente en espanol. SERVICIOS: Corte clasico 30min 15 euros, Corte y Barba 50min 25 euros, Afeitado navaja 30min 20 euros, Degradado Fade 40min 18 euros, Arreglo de barba 20min 12 euros. BARBEROS: Carlos, Miguel, Andres. HORARIOS: 10:00 10:30 11:00 11:30 12:00 16:00 16:30 17:00 17:30 18:00. DIAS: Lunes a Sabado. Saluda calurosamente, ayuda a reservar modificar o cancelar citas, recoge servicio dia hora barbero y nombre del cliente, confirma los datos, usa emojis moderadamente, se conciso maximo 3 lineas por mensaje.";
+// =====================
+// PROMPT DEL SISTEMA
+// =====================
+const SYSTEM_PROMPT = `
+Eres el asistente virtual de Barberia El Maestro.
+Gestionas citas por WhatsApp de forma amable y eficiente en español.
 
-app.get("/webhook", function(req, res) {
-  var mode = req.query["hub.mode"];
-  var token = req.query["hub.verify_token"];
-  var challenge = req.query["hub.challenge"];
+SERVICIOS:
+- Corte clasico 30min 15€
+- Corte y Barba 50min 25€
+- Afeitado navaja 30min 20€
+- Degradado Fade 40min 18€
+- Arreglo de barba 20min 12€
+
+BARBEROS: Carlos, Miguel, Andres
+HORARIOS: 10:00 a 12:00 / 16:00 a 18:00 (cada 30 min)
+DIAS: Lunes a Sabado
+
+REGLAS:
+- No inventes horarios ni servicios
+- Si falta información, pregunta
+- Máximo 3 líneas por respuesta
+- Usa emojis moderadamente 😊
+- Siempre confirma datos antes de cerrar cita
+`;
+
+// =====================
+// WEBHOOK VERIFICACIÓN
+// =====================
+app.get("/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
   if (mode === "subscribe" && token === VERIFY_TOKEN) {
     console.log("Webhook verificado");
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
+    return res.status(200).send(challenge);
   }
+
+  res.sendStatus(403);
 });
 
-app.post("/webhook", function(req, res) {
+// =====================
+// WEBHOOK PRINCIPAL
+// =====================
+app.post("/webhook", async (req, res) => {
   res.sendStatus(200);
+
   try {
-    var entry = req.body.entry && req.body.entry[0];
-    var change = entry && entry.changes && entry.changes[0];
-    var message = change && change.value && change.value.messages && change.value.messages[0];
-    if (!message || message.type !== "text") return;
-    var from = message.from;
-    var texto = message.text.body;
-    console.log("Mensaje de " + from + ": " + texto);
+    const message = req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    if (!message || message.type !== "text" || !message.text?.body) return;
+
+    const from = message.from;
+    const texto = message.text.body;
+
+    console.log(`Mensaje de ${from}: ${texto}`);
+
+    // init historial
     if (!conversaciones[from]) {
       conversaciones[from] = [];
     }
-    conversaciones[from].push({
-      role: "user",
-      parts: [{ text: texto }]
-    });
-    llamarGemini(conversaciones[from]).then(function(respuesta) {
+
+    // lock anti-colisiones
+    if (locks[from]) return;
+    locks[from] = true;
+
+    try {
+      conversaciones[from].push({
+        role: "user",
+        parts: [{ text: texto }]
+      });
+
+      // limitar memoria
+      if (conversaciones[from].length > 20) {
+        conversaciones[from] = conversaciones[from].slice(-20);
+      }
+
+      const respuesta = await llamarGemini(conversaciones[from]);
+
       conversaciones[from].push({
         role: "model",
         parts: [{ text: respuesta }]
       });
-      enviarMensaje(from, respuesta);
-    }).catch(function(err) {
-      console.log("Error Gemini: " + err.message);
-    });
+
+      await enviarMensaje(from, respuesta);
+
+    } finally {
+      locks[from] = false;
+    }
+
   } catch (error) {
-    console.log("Error: " + error.message);
+    console.error("Error webhook:", error.message);
   }
 });
-function llamarGemini(historial) {
-  var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" + GEMINI_API_KEY;
-  var contents = historial.map(function(msg) {
-    return {
-      role: msg.role,
-      parts: [{ text: msg.parts[0].text }]
-    };
-  });
-  var body = {
-    contents: contents,
+
+// =====================
+// GEMINI API
+// =====================
+async function llamarGemini(historial) {
+  const url =
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+  const contents = historial.map(m => ({
+    role: m.role,
+    parts: [{ text: m.parts[0].text }]
+  }));
+
+  const body = {
+    system_instruction: {
+      parts: [{ text: SYSTEM_PROMPT }]
+    },
+    contents,
     generationConfig: {
       maxOutputTokens: 300,
       temperature: 0.7
     }
   };
-function enviarMensaje(to, texto) {
-  var url = "https://graph.facebook.com/v19.0/" + PHONE_NUMBER_ID + "/messages";
-  return axios.post(url, {
-    messaging_product: "whatsapp",
-    to: to,
-    type: "text",
-    text: { body: texto }
-  }, {
-    headers: {
-      Authorization: "Bearer " + WHATSAPP_TOKEN,
-      "Content-Type": "application/json"
+
+  try {
+    const response = await axios.post(url, body);
+
+    const candidate = response?.data?.candidates?.[0];
+    const text = candidate?.content?.parts?.[0]?.text;
+
+    if (!text) {
+      return "Lo siento, no pude generar una respuesta en este momento.";
     }
-  }).then(function() {
-    console.log("Respuesta enviada a " + to);
-  });
+
+    return text;
+
+  } catch (err) {
+    console.error("Error Gemini:", err.response?.data || err.message);
+    return "Error al procesar la solicitud. Intenta de nuevo.";
+  }
 }
 
-var PORT = process.env.PORT || 8080;
-app.listen(PORT, function() {
-  console.log("Servidor arrancado en puerto " + PORT);
-});
+// =====================
+// WHATSAPP SEND MESSAGE
+// =====================
+async function enviarMensaje(to, texto) {
+  const url = `https
